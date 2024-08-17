@@ -1,0 +1,440 @@
+<html><head><base href="https://websim.ai/plane-designer/" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diseñador de Aviones DCS - Versión Mejorada</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<style>
+  body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #f0f4f8;
+    color: #2d3748;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  h1 {
+    color: #2c5282;
+    text-align: center;
+    margin-bottom: 30px;
+    font-weight: 700;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+  }
+
+  .tabs {
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+  }
+
+  .tab-list {
+    display: flex;
+    background-color: #edf2f7;
+    padding: 10px;
+  }
+
+  .tab {
+    padding: 12px 24px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    font-weight: 500;
+  }
+
+  .tab:hover, .tab[data-state="active"] {
+    background-color: #4299e1;
+    color: white;
+  }
+
+  .input, .textarea {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    transition: border-color 0.3s ease;
+  }
+
+  .input:focus, .textarea:focus {
+    outline: none;
+    border-color: #4299e1;
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.5);
+  }
+
+  .button {
+    background-color: #4299e1;
+    color: white;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+  }
+
+  .button:hover {
+    background-color: #3182ce;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  canvas {
+    width: 100%;
+    height: 400px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .alert {
+    padding: 12px 24px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-weight: 500;
+  }
+
+  .alert-success {
+    background-color: #c6f6d5;
+    border-color: #9ae6b4;
+    color: #22543d;
+  }
+
+  .alert-error {
+    background-color: #fed7d7;
+    border-color: #feb2b2;
+    color: #822727;
+  }
+
+  .tab-panel {
+    padding: 20px;
+  }
+
+  .file-input {
+    border: 2px dashed #4299e1;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .file-input:hover {
+    background-color: #ebf8ff;
+  }
+
+  .file-input input[type="file"] {
+    display: none;
+  }
+
+  .file-input label {
+    cursor: pointer;
+    color: #4299e1;
+    font-weight: 500;
+  }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    const { useState, useEffect, useRef } = React;
+
+    const PlaneDesigner = () => {
+      const [planeName, setPlaneName] = useState('');
+      const [engines, setEngines] = useState('');
+      const [power, setPower] = useState('');
+      const [weight, setWeight] = useState('');
+      const [dimensions, setDimensions] = useState('');
+      const [wingShape, setWingShape] = useState('');
+      const [entryLua, setEntryLua] = useState('');
+      const [clickableDataLua, setClickableDataLua] = useState('');
+      const [avionicsLua, setAvionicsLua] = useState('');
+      const [dcPlaneLua, setDcPlaneLua] = useState('');
+      const [alert, setAlert] = useState(null);
+      const [activeTab, setActiveTab] = useState(0);
+      
+      const canvasRef = useRef(null);
+      const sceneRef = useRef(null);
+      const cameraRef = useRef(null);
+      const rendererRef = useRef(null);
+      const controlsRef = useRef(null);
+
+      useEffect(() => {
+        initThreeJS();
+        return () => {
+          if (rendererRef.current) {
+            rendererRef.current.dispose();
+          }
+        };
+      }, []);
+
+      useEffect(() => {
+        generateLuaFiles();
+      }, [planeName, engines, power, weight, dimensions, wingShape]);
+
+      const initThreeJS = () => {
+        if (!canvasRef.current) return;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, antialias: true });
+
+        renderer.setSize(window.innerWidth * 0.8, window.innerHeight * 0.6);
+        camera.position.z = 5;
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+        sceneRef.current = scene;
+        cameraRef.current = camera;
+        rendererRef.current = renderer;
+        controlsRef.current = controls;
+
+        const animate = () => {
+          requestAnimationFrame(animate);
+          controls.update();
+          renderer.render(scene, camera);
+        };
+        animate();
+
+        // Add a simple airplane shape to the scene
+        const fuselageGeometry = new THREE.CylinderGeometry(0.5, 0.5, 4, 32);
+        const wingGeometry = new THREE.BoxGeometry(5, 0.1, 1);
+        const tailGeometry = new THREE.BoxGeometry(1, 0.8, 0.1);
+
+        const material = new THREE.MeshPhongMaterial({ color: 0x888888 });
+
+        const fuselage = new THREE.Mesh(fuselageGeometry, material);
+        const leftWing = new THREE.Mesh(wingGeometry, material);
+        const rightWing = new THREE.Mesh(wingGeometry, material);
+        const tail = new THREE.Mesh(tailGeometry, material);
+
+        fuselage.rotation.z = Math.PI / 2;
+        leftWing.position.set(0, 0, 1.5);
+        rightWing.position.set(0, 0, -1.5);
+        tail.position.set(-2, 0.8, 0);
+
+        const airplane = new THREE.Group();
+        airplane.add(fuselage);
+        airplane.add(leftWing);
+        airplane.add(rightWing);
+        airplane.add(tail);
+
+        scene.add(airplane);
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+      };
+
+      const generateLuaFiles = () => {
+        setEntryLua(`
+          declare_plugin("${planeName}", {
+            displayName = "${planeName}",
+            developerName = "Your Name",
+            installed = true,
+            dirName = current_mod_path,
+            fileMenuName = "${planeName}",
+            version = "1.0",
+            state = "installed",
+            info = _("A custom plane: ${planeName}"),
+          })
+        `);
+
+        setClickableDataLua(`
+          elements = {}
+          elements["PNT_ENGINE"] = default_button(
+            "Start/Stop Engine",
+            devices.ENGINE_SYSTEM,
+            device_commands.Button_1,
+            "Engine"
+          )
+        `);
+
+        setAvionicsLua(`
+          local Avionics = {}
+          function Avionics.init()
+            -- Initialize avionics systems
+          end
+          function Avionics.update()
+            -- Update avionics systems
+          end
+          return Avionics
+        `);
+
+        setDcPlaneLua(`
+          local FM = {}
+          function FM.startup()
+            -- Engine startup logic
+          end
+          function FM.shutdown()
+            -- Engine shutdown logic
+          end
+          function FM.update(pitch, roll, yaw, throttle)
+            -- Update plane position and orientation
+          end
+          return FM
+        `);
+      };
+
+      const handleDownload = (content, filename) => {
+        const element = document.createElement('a');
+        const file = new Blob([content], {type: 'text/plain'});
+        element.href = URL.createObjectURL(file);
+        element.download = filename;
+        document.body.appendChild(element);
+        element.click();
+        setAlert({ type: 'success', message: `Archivo ${filename} descargado con éxito.` });
+      };
+
+      const handleFileUpload = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const content = e.target.result;
+            // Here you could process the content of the file and update the 3D model
+            setAlert({ type: 'success', message: `Archivo ${file.name} cargado con éxito.` });
+          };
+          reader.readAsText(file);
+        }
+      };
+
+      return (
+        React.createElement('div', { className: "container" },
+          React.createElement('h1', { className: "text-4xl font-bold mb-8" }, "Diseñador Avanzado de Aviones DCS"),
+          
+          alert && React.createElement('div', { className: `alert ${alert.type === 'success' ? 'alert-success' : 'alert-error'}` },
+            React.createElement('p', null, alert.message)
+          ),
+
+          React.createElement('div', { className: "tabs" },
+            React.createElement('div', { className: "tab-list" },
+              React.createElement('div', { 
+                className: `tab ${activeTab === 0 ? 'active' : ''}`,
+                onClick: () => setActiveTab(0)
+              }, "Información General"),
+              React.createElement('div', { 
+                className: `tab ${activeTab === 1 ? 'active' : ''}`,
+                onClick: () => setActiveTab(1)
+              }, "Visualizador 3D"),
+              React.createElement('div', { 
+                className: `tab ${activeTab === 2 ? 'active' : ''}`,
+                onClick: () => setActiveTab(2)
+              }, "Archivos Lua")
+            ),
+
+            activeTab === 0 && React.createElement('div', { className: "tab-panel" },
+              React.createElement('input', { 
+                className: "input",
+                placeholder: "Nombre del Avión",
+                value: planeName,
+                onChange: (e) => setPlaneName(e.target.value)
+              }),
+              React.createElement('input', { 
+                className: "input",
+                placeholder: "Motores",
+                value: engines,
+                onChange: (e) => setEngines(e.target.value)
+              }),
+              React.createElement('input', { 
+                className: "input",
+                placeholder: "Potencia de Motores",
+                value: power,
+                onChange: (e) => setPower(e.target.value)
+              }),
+              React.createElement('input', { 
+                className: "input",
+                placeholder: "Peso del Avión",
+                value: weight,
+                onChange: (e) => setWeight(e.target.value)
+              }),
+              React.createElement('input', { 
+                className: "input",
+                placeholder: "Dimensiones del Avión",
+                value: dimensions,
+                onChange: (e) => setDimensions(e.target.value)
+              }),
+              React.createElement('input', { 
+                className: "input",
+                placeholder: "Forma de las Alas",
+                value: wingShape,
+                onChange: (e) => setWingShape(e.target.value)
+              })
+            ),
+
+            activeTab === 1 && React.createElement('div', { className: "tab-panel" },
+              React.createElement('canvas', { ref: canvasRef }),
+              React.createElement('div', { className: "file-input mt-4" },
+                React.createElement('input', { 
+                  type: "file",
+                  accept: ".obj",
+                  onChange: handleFileUpload,
+                  id: "file-upload"
+                }),
+                React.createElement('label', { htmlFor: "file-upload" }, "Cargar modelo 3D (.obj)")
+              )
+            ),
+
+            activeTab === 2 && React.createElement('div', { className: "tab-panel" },
+              React.createElement('textarea', { 
+                className: "textarea",
+                placeholder: "entry.lua",
+                value: entryLua,
+                onChange: (e) => setEntryLua(e.target.value)
+              }),
+              React.createElement('button', { 
+                className: "button mb-4",
+                onClick: () => handleDownload(entryLua, 'entry.lua')
+              }, "Descargar entry.lua"),
+
+              React.createElement('textarea', { 
+                className: "textarea",
+                placeholder: "clickabledata.lua",
+                value: clickableDataLua,
+                onChange: (e) => setClickableDataLua(e.target.value)
+              }),
+              React.createElement('button', { 
+                className: "button mb-4",
+                onClick: () => handleDownload(clickableDataLua, 'clickabledata.lua')
+              }, "Descargar clickabledata.lua"),
+
+              React.createElement('textarea', { 
+                className: "textarea",
+                placeholder: "Avionics.lua",
+                value: avionicsLua,
+                onChange: (e) => setAvionicsLua(e.target.value)
+              }),
+              React.createElement('button', { 
+                className: "button mb-4",
+                onClick: () => handleDownload(avionicsLua, 'Avionics.lua')
+              }, "Descargar Avionics.lua"),
+
+              React.createElement('textarea', { 
+                className: "textarea",
+                placeholder: "DC_MiAvionCubo.lua",
+                value: dcPlaneLua,
+                onChange: (e) => setDcPlaneLua(e.target.value)
+              }),
+              React.createElement('button', { 
+                className: "button",
+                onClick: () => handleDownload(dcPlaneLua, 'DC_MiAvionCubo.lua')
+              }, "Descargar DC_MiAvionCubo.lua")
+            )
+          )
+        )
+      );
+    };
+
+    ReactDOM.render(React.createElement(PlaneDesigner), document.getElementById('root'));
+  </script>
+</body></html>
